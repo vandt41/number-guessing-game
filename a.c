@@ -6,6 +6,9 @@
 #include <string.h>
 #include <time.h>
 
+#define WINDOW_HEIGHT 480
+#define WINDOW_WIDTH 480
+
 SDL_Window *window = NULL;
 SDL_Renderer *renderer = NULL;
 SDL_Event e;
@@ -19,7 +22,7 @@ void init()
         printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
         exit(1);
     }
-    window = SDL_CreateWindow("Guessing Game", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 1280, 720, SDL_WINDOW_SHOWN);
+    window = SDL_CreateWindow("Guessing Game", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WINDOW_HEIGHT, WINDOW_WIDTH, SDL_WINDOW_SHOWN);
     if (window == NULL)
     {
         printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
@@ -73,6 +76,66 @@ void formatGuess(const char *magicNumber, const char *guessed, char *formatted, 
     formatted[number_length] = '\0';
 }
 
+void getUsername(char *username, int maxLen, TTF_Font *font, SDL_Color color)
+{
+    SDL_StartTextInput();
+    strcpy(username, "");
+
+    SDL_Window *inputWindow = SDL_CreateWindow("Enter Username", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 400, 200, SDL_WINDOW_SHOWN);
+    SDL_Renderer *inputRenderer = SDL_CreateRenderer(inputWindow, -1, SDL_RENDERER_ACCELERATED);
+
+    bool inputRunning = true;
+    while (inputRunning)
+    {
+        while (SDL_PollEvent(&e))
+        {
+            if (e.type == SDL_QUIT)
+            {
+                inputRunning = false;
+            }
+            else if (e.type == SDL_TEXTINPUT)
+            {
+                if (strlen(username) < maxLen - 1)
+                {
+                    strcat(username, e.text.text);
+                }
+            }
+            else if (e.type == SDL_KEYDOWN)
+            {
+                if (e.key.keysym.sym == SDLK_BACKSPACE && strlen(username) > 0)
+                {
+                    username[strlen(username) - 1] = '\0';
+                }
+                else if (e.key.keysym.sym == SDLK_RETURN)
+                {
+                    inputRunning = false;
+                }
+            }
+        }
+
+        SDL_SetRenderDrawColor(inputRenderer, 0, 0, 0, 255);
+        SDL_RenderClear(inputRenderer);
+
+        char promptText[100];
+        snprintf(promptText, sizeof(promptText), "Username: %s", username);
+
+        SDL_Surface *promptSurface = TTF_RenderText_Solid(font, promptText, color);
+        SDL_Texture *promptTexture = SDL_CreateTextureFromSurface(inputRenderer, promptSurface);
+        SDL_Rect promptRect = {20, 80, promptSurface->w, promptSurface->h};
+        SDL_FreeSurface(promptSurface);
+
+        SDL_RenderCopy(inputRenderer, promptTexture, NULL, &promptRect);
+        SDL_RenderPresent(inputRenderer);
+        SDL_DestroyTexture(promptTexture);
+
+        SDL_Delay(10);
+    }
+
+    SDL_DestroyRenderer(inputRenderer);
+    SDL_DestroyWindow(inputWindow);
+    SDL_StopTextInput();
+}
+
 int gameLoop(const char *magicNumber, int number_length, const char *username)
 {
     char guessed[number_length + 1];
@@ -81,6 +144,9 @@ int gameLoop(const char *magicNumber, int number_length, const char *username)
     guessed[number_length] = '\0';
     formatted[number_length] = '\0';
     memset(initialDisplay, '-', number_length);
+    memset(guessed, ' ', number_length);
+    memset(formatted, '-', number_length);
+
     initialDisplay[number_length] = '\0';
     int attempts = 0, correctedGuessed = 0;
 
@@ -98,7 +164,7 @@ int gameLoop(const char *magicNumber, int number_length, const char *username)
         return -1;
     }
 
-    SDL_Color color = {51, 0, 0};
+    SDL_Color color = {255, 255, 255};
     SDL_Texture *messageTexture = NULL;
     SDL_Rect messageRect;
 
@@ -152,6 +218,7 @@ int gameLoop(const char *magicNumber, int number_length, const char *username)
                             {
                                 resultText = "Incorrect guess. Try again!";
                                 correctedGuessed = 0;
+                                memset(guessed, '\0', number_length);
                             }
 
                             SDL_Surface *messageSurface = TTF_RenderText_Solid(font, resultText, color);
@@ -195,8 +262,17 @@ int gameLoop(const char *magicNumber, int number_length, const char *username)
 
         SDL_RenderCopy(renderer, displayTexture, NULL, &displayRect);
 
+        // Update the input display based on the number of digits entered
         char inputText[number_length + 20];
-        snprintf(inputText, sizeof(inputText), "Input: %s", guessed[0] ? guessed : initialDisplay);
+        if (correctedGuessed == number_length)
+        {
+            snprintf(inputText, sizeof(inputText), "Input:   %s", initialDisplay);
+        }
+        else
+        {
+            snprintf(inputText, sizeof(inputText), "Input:   %s", guessed);
+        }
+
         SDL_Surface *inputSurface = TTF_RenderText_Solid(font, inputText, color);
         SDL_Texture *inputTexture = SDL_CreateTextureFromSurface(renderer, inputSurface);
         SDL_Rect inputRect = {20, 90, inputSurface->w, inputSurface->h};
@@ -242,11 +318,26 @@ int gameLoop(const char *magicNumber, int number_length, const char *username)
 
 int main(int argc, char *argv[])
 {
-    char username[50];
-    printf("Enter your username: ");
-    scanf("%49s", username);
-
     init();
+
+    if (TTF_Init() == -1)
+    {
+        printf("TTF_Init: %s\n", TTF_GetError());
+        exit(1);
+    }
+
+    TTF_Font *font = TTF_OpenFont("Arial.ttf", 24);
+    if (!font)
+    {
+        printf("TTF_OpenFont: %s\n", TTF_GetError());
+        TTF_Quit();
+        exit(1);
+    }
+
+    SDL_Color color = {255, 255, 255};
+    char username[50];
+    getUsername(username, sizeof(username), font, color);
+
     loadBackground("background.bmp");
     const int number_length = 6;
     char magicNumber[number_length + 1];
