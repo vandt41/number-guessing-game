@@ -1,7 +1,7 @@
 // This is the newest state of the game
-// type make in terminal to build the game
-// This is the newest state of the game
-// type make in terminal to build the game
+// type make in terminal to build the game and .\game.exe to play
+
+// Include the game's libraries
 #include <SDL2/SDL.h>
 #include <stdbool.h>
 #include <SDL2/SDL_ttf.h>
@@ -11,9 +11,12 @@
 #include <time.h>
 #include <SDL2/SDL_mixer.h>
 
+// Define constants
 #define WINDOW_HEIGHT 480
 #define WINDOW_WIDTH 720
 #define MAX_SCORES 5
+#define MAX_GAME_LEVEL 3
+#define DEFAULT_NUM_LENGTH 4
 
 // Structure to store player scores
 typedef struct
@@ -23,22 +26,25 @@ typedef struct
     double successRatio;
 } Score;
 
-// Declare global variables
+// Initialize UX/UI components
 SDL_Window *window = NULL;
 SDL_Renderer *renderer = NULL;
 SDL_Event e;
-bool running = true;
-bool gameFinished = true;
-int gameLevel = 1;
-int number_length = 4;
-time_t startTime;
-int attempts = 0, correctGuesses = 0;
-int timeTaken;
-double successRatio = (double)0;
 SDL_Texture *backgroundTexture = NULL;
 TTF_Font *font = NULL;
 Mix_Music *bgMusic = NULL;
 SDL_Color color = {0, 0, 0};
+
+// Declare global variables
+bool running = true;
+bool gameFinished = true;
+bool inputRunning = true;
+int gameLevel = 1;
+int number_length = DEFAULT_NUM_LENGTH;
+time_t startTime;
+int attempts = 0, correctGuesses = 0;
+int timeTaken;
+double successRatio = (double)0;
 
 // Function prototypes
 void initSDL();
@@ -52,9 +58,8 @@ void gameLoop(const char *magicNumber, int number_length, const char *username, 
 void readHighScores(Score scores[], int *scoreCount);
 void saveHighScores(Score scores[], int scoreCount);
 int compareScores(const void *a, const void *b);
-void showHighScores();
+void showHighScores(int *attempts, int *correctGuesses);
 
-// Main function
 // Main function
 int main(int argc, char *argv[])
 {
@@ -66,7 +71,10 @@ int main(int argc, char *argv[])
 
     // Get player's username
     char username[50];
-    getUsername(username, sizeof(username));
+    while (inputRunning)
+    {
+        getUsername(username, sizeof(username));
+    }
     startTime = time(NULL);
 
     // Initialize attempts and correctGuesses
@@ -81,6 +89,7 @@ int main(int argc, char *argv[])
         randomNumber(magicNumber, number_length);
         gameLoop(magicNumber, number_length, username, &attempts, &correctGuesses);
 
+        // Won't save user's play if not finished all 3 levels
         if (!gameFinished)
         {
             break;
@@ -94,7 +103,7 @@ int main(int argc, char *argv[])
         }
 
         // Check if player has completed all levels
-        if (gameLevel == 3)
+        if (gameLevel == MAX_GAME_LEVEL)
         {
             // Calculate ratio and save scores
             if (attempts > 0)
@@ -106,12 +115,15 @@ int main(int argc, char *argv[])
                 successRatio = 0.0;
             }
 
+            // Read existing high scores
             Score scores[MAX_SCORES + 1];
             int scoreCount = 0;
             readHighScores(scores, &scoreCount);
 
+            // Add the new score to the array
             if (scoreCount < MAX_SCORES)
             {
+                // There's still room for a new score
                 scores[scoreCount].time = timeTaken;
                 scores[scoreCount].successRatio = successRatio;
                 strcpy(scores[scoreCount].username, username);
@@ -119,31 +131,42 @@ int main(int argc, char *argv[])
             }
             else
             {
-                scores[MAX_SCORES].time = timeTaken;
-                scores[MAX_SCORES].successRatio = successRatio;
-                strcpy(scores[MAX_SCORES].username, username);
-                scoreCount = MAX_SCORES + 1;
+                // Replace the lowest score if the new one is better
+                int minIndex = 0;
+                for (int i = 1; i < scoreCount; i++)
+                {
+                    if (scores[i].successRatio < scores[minIndex].successRatio)
+                    {
+                        minIndex = i;
+                    }
+                }
+
+                if (successRatio > scores[minIndex].successRatio)
+                {
+                    scores[minIndex].time = timeTaken;
+                    scores[minIndex].successRatio = successRatio;
+                    strcpy(scores[minIndex].username, username);
+                }
             }
 
-            if (scoreCount > MAX_SCORES)
-            {
-                saveHighScores(scores, MAX_SCORES);
-            }
-            else
-            {
-                saveHighScores(scores, scoreCount);
-            }
+            // Sort the scores in descending order
+            qsort(scores, scoreCount, sizeof(Score), compareScores);
 
-            showHighScores();
+            // Save the top scores
+            saveHighScores(scores, scoreCount > MAX_SCORES ? MAX_SCORES : scoreCount);
+
+            // Show high scores and reset to the first level
+            showHighScores(&attempts, &correctGuesses);
             gameLevel = 1;
-            number_length = 4;
+            number_length = DEFAULT_NUM_LENGTH;
             continue;
         }
 
         // Render next level prompt
-        SDL_Surface *messageSurface = TTF_RenderText_Solid(font, "Press Enter to move to next level...", color);
+        color = {237, 170, 125};
+        SDL_Surface *messageSurface = TTF_RenderText_Solid(font, "Correct guess! Press Enter to move to next level...", color);
         SDL_Texture *messageTexture = SDL_CreateTextureFromSurface(renderer, messageSurface);
-        SDL_Rect messageRect = {20, 400, messageSurface->w, messageSurface->h};
+        SDL_Rect messageRect = {20, 100, messageSurface->w, messageSurface->h};
         SDL_FreeSurface(messageSurface);
         SDL_RenderCopy(renderer, messageTexture, NULL, &messageRect);
         SDL_RenderPresent(renderer);
@@ -282,7 +305,7 @@ void closeSDL()
 void loadResources()
 {
     // Load font
-    font = TTF_OpenFont("game.otf", 24);
+    font = TTF_OpenFont("VeniteAdoremusStraight-Yzo6v.ttf", 20);
     if (!font)
     {
         printf("TTF_OpenFont: %s\n", TTF_GetError());
@@ -348,7 +371,6 @@ void getUsername(char *username, int maxLen)
     SDL_StartTextInput();
     strcpy(username, "");
 
-    bool inputRunning = true;
     bool validInput = false;
     SDL_Event e;
 
@@ -406,7 +428,7 @@ void getUsername(char *username, int maxLen)
         char promptText[100];
         if (!validInput)
         {
-            snprintf(promptText, sizeof(promptText), "Enter Username (no spaces allowed): %s", username);
+            snprintf(promptText, sizeof(promptText), "Enter Username (without spaces): %s", username);
         }
         else
         {
@@ -428,47 +450,68 @@ void getUsername(char *username, int maxLen)
 }
 
 // Function to handle the game loop
-// Function to handle the game loop
 void gameLoop(const char *magicNumber, int number_length, const char *username, int *attempts, int *correctGuesses)
 {
+    // Debugging output to show the magic number (remove in the final version)
     printf("Magic number(for debugging): %s\n", magicNumber);
+
+    // Initialize arrays to store the guessed number, formatted display, and initial display
     char guessed[number_length + 1];
     char formatted[number_length + 1];
     char initialDisplay[number_length + 1];
+
+    // Set terminating character for the guessed and formatted arrays
     guessed[number_length] = '\0';
     formatted[number_length] = '\0';
+
+    // Initialize the initial display with dashes and guessed with spaces
     memset(initialDisplay, '-', number_length);
     memset(guessed, ' ', number_length);
     memset(formatted, '-', number_length);
 
+    // Terminate the initial display string
     initialDisplay[number_length] = '\0';
+
+    // Counter to track the number of digits entered by the player
     int DigitCount = 0;
+
+    // Set the color for the text to be rendered
     SDL_Color color = {255, 153, 51};
+
+    // Initialize variables for SDL textures and rectangles
     SDL_Texture *messageTexture = NULL;
     SDL_Rect messageRect;
 
+    // Create and render the username text
     char usernameText[100];
     snprintf(usernameText, sizeof(usernameText), "Player: %s", username);
     SDL_Surface *usernameSurface = TTF_RenderText_Solid(font, usernameText, color);
     SDL_Texture *usernameTexture = SDL_CreateTextureFromSurface(renderer, usernameSurface);
     SDL_Rect usernameRect = {20, 40, usernameSurface->w, usernameSurface->h};
+    // Free the surface after creating the texture
     SDL_FreeSurface(usernameSurface);
 
+    // Create and render the level text
     char levelText[10];
     snprintf(levelText, sizeof(levelText), "Level: %d", gameLevel);
     SDL_Surface *levelSurface = TTF_RenderText_Solid(font, levelText, color);
     SDL_Texture *levelTexture = SDL_CreateTextureFromSurface(renderer, levelSurface);
     SDL_Rect levelRect = {20, 10, levelSurface->w, levelSurface->h};
+    // Free the surface after creating the texture
     SDL_FreeSurface(levelSurface);
 
+    // Flag to keep the game loop running
     bool gameRunning = true;
 
+    // Main game loop
     while (gameRunning && running)
     {
+        // Poll for events like key presses or quitting the game
         while (SDL_PollEvent(&e))
         {
             if (e.type == SDL_QUIT)
             {
+                // Handle quitting the game
                 gameFinished = false;
                 gameRunning = false;
                 running = false;
@@ -476,17 +519,25 @@ void gameLoop(const char *magicNumber, int number_length, const char *username, 
             }
             else if (e.type == SDL_KEYDOWN)
             {
+                // Handle digit input if there is still space for more digits
                 if (DigitCount < number_length)
                 {
+                    // Check if a number key was pressed
                     if (e.key.keysym.sym >= SDLK_0 && e.key.keysym.sym <= SDLK_9)
                     {
+                        // Convert the key to a character and add it to the guessed number
                         guessed[DigitCount] = e.key.keysym.sym - SDLK_0 + '0';
                         DigitCount++;
+
+                        // If the number is fully guessed, check if it's correct
                         if (DigitCount == number_length)
                         {
+                            // Format the guessed number
                             formatGuess(magicNumber, guessed, formatted, number_length);
+                            // Increment the attempts counter
                             (*attempts)++;
 
+                            // Check if any digits are correct
                             bool hasCorrectDigit = false;
                             for (int i = 0; i < number_length; i++)
                             {
@@ -496,35 +547,44 @@ void gameLoop(const char *magicNumber, int number_length, const char *username, 
                                     break;
                                 }
                             }
+                            // Increment correct guesses if any digit is correct
                             if (hasCorrectDigit)
                             {
                                 (*correctGuesses)++;
                             }
 
                             const char *resultText;
+
+                            // Check if the guessed number matches the magic number
                             if (strncmp(guessed, magicNumber, number_length) == 0)
                             {
-                                resultText = "Correct guess!";
+                                // Stop the game loop
                                 gameRunning = false;
                             }
                             else
                             {
-                                resultText = "Incorrect guess. Try again!";
+                                // Reset digit count
                                 DigitCount = 0;
+                                // Incorrect guess, prompt to try again
+                                resultText = "Incorrect guess. Try again!";
+                                // Clear guessed number
                                 memset(guessed, '\0', number_length);
                             }
 
+                            // Create and render the result message
                             SDL_Surface *messageSurface = TTF_RenderText_Solid(font, resultText, color);
                             messageTexture = SDL_CreateTextureFromSurface(renderer, messageSurface);
                             messageRect.x = 20;
-                            messageRect.y = 160;
+                            messageRect.y = 170;
                             messageRect.w = messageSurface->w;
                             messageRect.h = messageSurface->h;
+                            // Free the surface after creating the texture
                             SDL_FreeSurface(messageSurface);
                         }
                     }
                     else if (e.key.keysym.sym == SDLK_BACKSPACE && DigitCount > 0)
                     {
+                        // Handle backspace key to remove the last entered digit
                         DigitCount--;
                         guessed[DigitCount] = '\0';
                     }
@@ -532,26 +592,36 @@ void gameLoop(const char *magicNumber, int number_length, const char *username, 
             }
         }
 
+        // Render everything to the screen
+        // Set background color to black
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        // Clear the renderer
         SDL_RenderClear(renderer);
+
+        // Render background texture if it exists
         if (backgroundTexture)
         {
             SDL_RenderCopy(renderer, backgroundTexture, NULL, NULL);
         }
+
+        // Render the username text
         SDL_RenderCopy(renderer, usernameTexture, NULL, &usernameRect);
 
+        // Create and render the formatted guessed number
         char displayText[number_length + 20];
         snprintf(displayText, sizeof(displayText), "Guess: %s", formatted);
         SDL_Surface *displaySurface = TTF_RenderText_Solid(font, displayText, color);
         SDL_Texture *displayTexture = SDL_CreateTextureFromSurface(renderer, displaySurface);
-        SDL_Rect displayRect = {20, 80, displaySurface->w, displaySurface->h};
+        SDL_Rect displayRect = {20, 100, displaySurface->w, displaySurface->h};
+        // Free the surface after creating the texture
         SDL_FreeSurface(displaySurface);
-
+        // Render the guessed number
         SDL_RenderCopy(renderer, displayTexture, NULL, &displayRect);
+        // Render the level text
         SDL_RenderCopy(renderer, levelTexture, NULL, &levelRect);
 
+        // Create and render the input display text
         char inputText[number_length + 20];
-
         if (DigitCount == number_length)
         {
             snprintf(inputText, sizeof(inputText), "Input: %s", initialDisplay);
@@ -563,36 +633,49 @@ void gameLoop(const char *magicNumber, int number_length, const char *username, 
 
         SDL_Surface *inputSurface = TTF_RenderText_Solid(font, inputText, color);
         SDL_Texture *inputTexture = SDL_CreateTextureFromSurface(renderer, inputSurface);
-        SDL_Rect inputRect = {20, 120, inputSurface->w, inputSurface->h};
+        SDL_Rect inputRect = {20, 140, inputSurface->w, inputSurface->h};
+        // Free the surface after creating the texture
         SDL_FreeSurface(inputSurface);
+        // Render the input display
         SDL_RenderCopy(renderer, inputTexture, NULL, &inputRect);
 
-        // Calculate elapsed time
+        // Calculate and render the elapsed time
         time_t currentTime = time(NULL);
         int elapsedTime = (int)difftime(currentTime, startTime);
 
         char timeText[50];
-        snprintf(timeText, sizeof(timeText), "Time: %d s ", elapsedTime);
+        snprintf(timeText, sizeof(timeText), "Time: %d s", elapsedTime);
         SDL_Surface *timeSurface = TTF_RenderText_Solid(font, timeText, color);
         SDL_Texture *timeTexture = SDL_CreateTextureFromSurface(renderer, timeSurface);
         SDL_Rect timeRect = {WINDOW_WIDTH - timeSurface->w - 20, 10, timeSurface->w, timeSurface->h};
-        SDL_FreeSurface(timeSurface);
-        SDL_RenderCopy(renderer, timeTexture, NULL, &timeRect);
-        SDL_DestroyTexture(timeTexture);
 
+        // Free the surface after creating the texture
+        SDL_FreeSurface(timeSurface);
+
+        // Render the time
+        SDL_RenderCopy(renderer, timeTexture, NULL, &timeRect);
+
+        // Render the result message if it exists
         if (messageTexture)
         {
             SDL_RenderCopy(renderer, messageTexture, NULL, &messageRect);
         }
+
+        // Update the screen with the rendered content
         SDL_RenderPresent(renderer);
+
+        // Clean up textures
         SDL_DestroyTexture(displayTexture);
         SDL_DestroyTexture(inputTexture);
+        // Add a small delay to control the loop speed
         SDL_Delay(10);
     }
 
+    // Clean up message and username textures at the end of the loop
     SDL_DestroyTexture(messageTexture);
     SDL_DestroyTexture(usernameTexture);
 
+    // Calculate the time taken for this game session
     time_t endTime = time(NULL);
     timeTaken = (int)difftime(endTime, startTime);
 }
@@ -619,13 +702,13 @@ void readHighScores(Score scores[], int *scoreCount)
 // Function to save high scores to a file
 void saveHighScores(Score scores[], int count)
 {
-    Score existingScores[MAX_SCORES];
+    Score existingScores[MAX_SCORES * 10]; // Allow space for many scores
     int existingCount = 0;
 
     // Read existing high scores
     readHighScores(existingScores, &existingCount);
 
-    // Add the new scores to the existing scores if they are higher
+    // Add the new scores to the existing scores list
     for (int i = 0; i < count; i++)
     {
         bool updated = false;
@@ -635,32 +718,33 @@ void saveHighScores(Score scores[], int count)
             {
                 if (scores[i].successRatio > existingScores[j].successRatio)
                 {
-                    existingScores[j] = scores[i];
+                    existingScores[j] = scores[i]; // Replace with the better run
                 }
                 updated = true;
                 break;
             }
         }
-        if (!updated && existingCount < MAX_SCORES)
+        if (!updated && existingCount < MAX_SCORES * 10)
         {
-            existingScores[existingCount++] = scores[i];
+            existingScores[existingCount++] = scores[i]; // Add new entry if not found
         }
     }
 
-    // Sort the updated list in descending order
+    // Sort all scores in descending order
     qsort(existingScores, existingCount, sizeof(Score), compareScores);
 
-    // Save the top scores
+    // Save all scores back to the file
     FILE *file = fopen("highscore.txt", "w");
     if (file != NULL)
     {
-        for (int i = 0; i < existingCount && i < MAX_SCORES; i++)
+        for (int i = 0; i < existingCount; i++)
         {
             fprintf(file, "%s\t%d\t%.2f\n", existingScores[i].username, existingScores[i].time, existingScores[i].successRatio);
         }
         fclose(file);
     }
 }
+
 // Function to compare scores for sorting
 int compareScores(const void *a, const void *b)
 {
@@ -676,23 +760,36 @@ int compareScores(const void *a, const void *b)
         return 0;
 }
 // Function to show high scores
-void showHighScores()
+void showHighScores(int *attempts, int *correctGuesses)
 {
-    Score scores[MAX_SCORES];
+    Score scores[MAX_SCORES * 10];
     int scoreCount = 0;
     readHighScores(scores, &scoreCount);
-    char highScoreText[] = "High Scores:";
+
+    // Sort the scores in descending order by success ratio
+    qsort(scores, scoreCount, sizeof(Score), compareScores);
+
+    // Show only the top 5 scores
+    char highScoreText[] = "Leaderboard";
+    color = {237, 170, 125};
     SDL_Surface *highScoreSurface = TTF_RenderText_Solid(font, highScoreText, color);
     SDL_Texture *highScoreTexture = SDL_CreateTextureFromSurface(renderer, highScoreSurface);
-    SDL_Rect highScoreRect = {20, 20, highScoreSurface->w, highScoreSurface->h};
+    SDL_Rect highScoreRect = {250, 20, highScoreSurface->w, highScoreSurface->h};
+    SDL_RenderCopy(renderer, highScoreTexture, NULL, &highScoreRect);
+
+    char divideText[] = "------------------------------------------------------------------------------";
+    color = {237, 170, 125};
+    highScoreSurface = TTF_RenderText_Solid(font, divideText, color);
+    highScoreTexture = SDL_CreateTextureFromSurface(renderer, highScoreSurface);
+    highScoreRect = {0, 40, highScoreSurface->w, highScoreSurface->h};
     SDL_FreeSurface(highScoreSurface);
     SDL_RenderCopy(renderer, highScoreTexture, NULL, &highScoreRect);
     SDL_DestroyTexture(highScoreTexture);
 
     // Start position for the first score line
     int yOffset = 100;
-    for (int i = 0; i < scoreCount; i++)
-    {
+    for (int i = 0; i < scoreCount && i < 5; i++)
+    { // Display only the top 5
         char scoreLine[100];
         snprintf(scoreLine, sizeof(scoreLine), "%d. %s - Time: %d - Success: %.2f%%",
                  i + 1, scores[i].username, scores[i].time, scores[i].successRatio);
@@ -708,11 +805,13 @@ void showHighScores()
         // Move down for the next score line, with a small gap
         yOffset += scoreRect.h + 10;
     }
+
     if (gameFinished)
     {
-        SDL_Surface *messageSurface = TTF_RenderText_Solid(font, "Press Enter to play again...", color);
+        color = {172, 153, 193};
+        SDL_Surface *messageSurface = TTF_RenderText_Solid(font, "Press Enter to play again with the same username", color);
         SDL_Texture *messageTexture = SDL_CreateTextureFromSurface(renderer, messageSurface);
-        SDL_Rect messageRect = {20, 400, messageSurface->w, messageSurface->h};
+        SDL_Rect messageRect = {20, 300, messageSurface->w, messageSurface->h};
         SDL_FreeSurface(messageSurface);
 
         SDL_RenderCopy(renderer, messageTexture, NULL, &messageRect);
@@ -729,7 +828,11 @@ void showHighScores()
             }
             else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_RETURN)
             {
+                // Reset timer to 0 if user wants to play again
                 startTime = time(NULL);
+                // Reset ratio if decided to play again with the same username
+                *attempts = 0;
+                *correctGuesses = 0;
                 break;
             }
         }

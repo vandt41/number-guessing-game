@@ -1,0 +1,24 @@
+1. Open "game.exe" to play.
+
+2. (If "game.exe" is not built, open "game.c" and type "make" in terminal to build).
+
+3. Input a username (50 characters maximum) - no spaces allowed.
+The game will ask for username again if input is invalid.
+
+4. The game have 3 level.
++ Level 1: 4-digits numbers
++ Level 2: 5-digits numbers
++ Level 3: 6-digits numbers
+
+5. After all digits are typed, the game will show all correct digit positions.
+	
+6. User have to guess that magic number to process to next level.
+
+7. Each run are counted and display on top right corner.
+
+8. Success Ratio are calculated by : success guesses / total attempts * 100  
+which success guesses increase whenever user guessed at least 1 correct digit.
+
+9. Top 5 ranking are shown after finishing all levels.
+
+10. User can play again with the same username (only save the play with higher ratio).
